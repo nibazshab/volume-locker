@@ -4,8 +4,6 @@
 #include <iostream>
 #include <wrl/client.h>
 #include <wrl/implements.h>
-#include <atomic>
-#include <memory>
 
 #pragma comment(lib, "Ole32.lib")
 

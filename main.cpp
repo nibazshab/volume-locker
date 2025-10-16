@@ -3,124 +3,135 @@
 #include <endpointvolume.h>
 #include <iostream>
 #include <wrl/client.h>
+#include <wrl/implements.h>
 #include <atomic>
+#include <memory>
 
 #pragma comment(lib, "Ole32.lib")
 
+using Microsoft::WRL::ClassicCom;
 using Microsoft::WRL::ComPtr;
+using Microsoft::WRL::Make;
+using Microsoft::WRL::RuntimeClass;
+using Microsoft::WRL::RuntimeClassFlags;
 
-const float VOICE_SIZE = 1.0f;
+const float TARGET_VOLUME_LEVEL = 1.0f;
 
-static const GUID GUID_MyContext = {0x1a2b3c4d, 0x5e6f, 0x7a8b, {0x9c, 0x0d, 0x1e, 0x2f, 0x3a, 0x4b, 0x5c, 0x6d}};
+static const GUID GUID_AppEventContext = {0x1a2b3c4d, 0x5e6f, 0x7a8b, {0x9c, 0x0d, 0x1e, 0x2f, 0x3a, 0x4b, 0x5c, 0x6d}};
 
-class VolumeCallback : public IAudioEndpointVolumeCallback
+class VolumeChangeCallback : public RuntimeClass<RuntimeClassFlags<ClassicCom>, IAudioEndpointVolumeCallback>
 {
 public:
-    VolumeCallback(ComPtr<IAudioEndpointVolume> endpointVolume)
-        : m_endpointVolume(endpointVolume),
-          m_refCount(1),
-          m_lastSetTime(0),
-          m_settingInProgress(false) {}
-
-    STDMETHODIMP QueryInterface(REFIID riid, void **ppv)
+    VolumeChangeCallback(ComPtr<IAudioEndpointVolume> endpointVolume)
+        : m_endpointVolume(endpointVolume), m_isSettingVolume(false)
     {
-        if (riid == IID_IUnknown || riid == __uuidof(IAudioEndpointVolumeCallback))
-        {
-            *ppv = static_cast<IAudioEndpointVolumeCallback *>(this);
-            AddRef();
-            return S_OK;
-        }
-        *ppv = nullptr;
-        return E_NOINTERFACE;
     }
 
-    STDMETHODIMP_(ULONG)
-    AddRef() { return InterlockedIncrement(&m_refCount); }
-    STDMETHODIMP_(ULONG)
-    Release()
+    STDMETHODIMP OnNotify(PAUDIO_VOLUME_NOTIFICATION_DATA pNotify) override
     {
-        ULONG refs = InterlockedDecrement(&m_refCount);
-        if (refs == 0)
+        if (pNotify && IsEqualGUID(pNotify->guidEventContext, GUID_AppEventContext))
         {
-            delete this;
-            return 0;
+            return S_OK;
         }
-        return refs;
-    }
 
-    STDMETHODIMP OnNotify(PAUDIO_VOLUME_NOTIFICATION_DATA pNotify)
-    {
-        if (IsEqualGUID(pNotify->guidEventContext, GUID_MyContext))
+        if (pNotify && pNotify->fMasterVolume == TARGET_VOLUME_LEVEL)
+        {
             return S_OK;
+        }
 
-        if (pNotify->fMasterVolume == VOICE_SIZE)
+        bool expected = false;
+        if (!m_isSettingVolume.compare_exchange_strong(expected, true))
+        {
             return S_OK;
+        }
 
-        DWORD currentTime = GetTickCount64();
-
-        if (currentTime - m_lastSetTime < 100)
-            return S_OK;
-
-        if (m_settingInProgress.exchange(true))
-            return S_OK;
-
-        HRESULT hr = m_endpointVolume->SetMasterVolumeLevelScalar(VOICE_SIZE, const_cast<GUID *>(&GUID_MyContext));
-
-        m_lastSetTime = currentTime;
-        m_settingInProgress = false;
+        m_endpointVolume->SetMasterVolumeLevelScalar(TARGET_VOLUME_LEVEL, &GUID_AppEventContext);
+        m_isSettingVolume = false;
 
         return S_OK;
     }
 
 private:
     ComPtr<IAudioEndpointVolume> m_endpointVolume;
-    LONG m_refCount;
-    DWORD m_lastSetTime;
-    std::atomic<bool> m_settingInProgress;
+    std::atomic<bool> m_isSettingVolume;
+};
+
+class VolumeCallbackUnregister
+{
+public:
+    VolumeCallbackUnregister(ComPtr<IAudioEndpointVolume> volume, IAudioEndpointVolumeCallback *callback)
+        : m_volume(volume), m_callback(callback)
+    {
+    }
+
+    ~VolumeCallbackUnregister()
+    {
+        if (m_volume && m_callback)
+        {
+            m_volume->UnregisterControlChangeNotify(m_callback);
+        }
+    }
+
+    VolumeCallbackUnregister(const VolumeCallbackUnregister &) = delete;
+    VolumeCallbackUnregister &operator=(const VolumeCallbackUnregister &) = delete;
+
+private:
+    ComPtr<IAudioEndpointVolume> m_volume;
+    IAudioEndpointVolumeCallback *m_callback;
+};
+
+class COMInitializer
+{
+public:
+    COMInitializer() : m_initialized(SUCCEEDED(CoInitialize(nullptr))) {}
+    ~COMInitializer()
+    {
+        if (m_initialized)
+        {
+            CoUninitialize();
+        }
+    }
+    explicit operator bool() const { return m_initialized; }
+
+private:
+    bool m_initialized;
 };
 
 int main()
 {
-    HRESULT hr = CoInitialize(nullptr);
-    if (FAILED(hr))
+    COMInitializer comInit;
+    if (!comInit)
         return 1;
 
     ComPtr<IMMDeviceEnumerator> pEnumerator;
-    ComPtr<IMMDevice> pDevice;
-    ComPtr<IAudioEndpointVolume> pEndpointVolume;
-    VolumeCallback *callback = nullptr;
-
-    hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&pEnumerator));
+    HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&pEnumerator));
     if (FAILED(hr))
-        goto Cleanup;
+        return 1;
 
+    ComPtr<IMMDevice> pDevice;
     hr = pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice);
     if (FAILED(hr))
-        goto Cleanup;
+        return 1;
 
-    hr = pDevice->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_ALL, nullptr, reinterpret_cast<void **>(pEndpointVolume.GetAddressOf()));
+    ComPtr<IAudioEndpointVolume> pEndpointVolume;
+    hr = pDevice->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_ALL, nullptr, &pEndpointVolume);
     if (FAILED(hr))
-        goto Cleanup;
+        return 1;
 
-    callback = new VolumeCallback(pEndpointVolume);
-    hr = pEndpointVolume->RegisterControlChangeNotify(callback);
+    pEndpointVolume->SetMasterVolumeLevelScalar(TARGET_VOLUME_LEVEL, &GUID_AppEventContext);
+
+    auto callback = Make<VolumeChangeCallback>(pEndpointVolume);
+    if (!callback)
+        return 1;
+
+    hr = pEndpointVolume->RegisterControlChangeNotify(callback.Get());
     if (FAILED(hr))
-        goto Cleanup;
+        return 1;
 
-    std::cout << "Listening for volume changes...\n";
+    VolumeCallbackUnregister unregisterGuard(pEndpointVolume, callback.Get());
+
+    std::cout << "Volume is locked..." << std::endl;
     std::cin.get();
 
-    if (pEndpointVolume && callback)
-    {
-        pEndpointVolume->UnregisterControlChangeNotify(callback);
-    }
-
-Cleanup:
-    if (callback)
-    {
-        callback->Release();
-    }
-
-    CoUninitialize();
     return 0;
 }

@@ -37,10 +37,10 @@ int main()
     while (true)
     {
         pEndpointVolume->SetMasterVolumeLevelScalar(1.0f, nullptr);
-        Sleep(500);
+        Sleep(1000);
     }
 
 Cleanup:
     CoUninitialize();
-    return FAILED(hr);
+    return 1;
 }

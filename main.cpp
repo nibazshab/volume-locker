@@ -1,135 +1,65 @@
 #include <windows.h>
 #include <mmdeviceapi.h>
 #include <endpointvolume.h>
-#include <iostream>
-#include <wrl/client.h>
-#include <wrl/implements.h>
+#include <winrt/Windows.Foundation.h>
 
-#pragma comment(lib, "Ole32.lib")
+using namespace winrt;
 
-using Microsoft::WRL::ClassicCom;
-using Microsoft::WRL::ComPtr;
-using Microsoft::WRL::Make;
-using Microsoft::WRL::RuntimeClass;
-using Microsoft::WRL::RuntimeClassFlags;
+constexpr float TARGET_VOLUME = 1.0f;
+const GUID VOLUME_CTX_GUID = {0x1a2b3c4d, 0x5e6f, 0x7a8b, {0x9c, 0x0d, 0x1e, 0x2f, 0x3a, 0x4b, 0x5c, 0x6d}};
 
-const float TARGET_VOLUME_LEVEL = 1.0f;
-
-static const GUID GUID_AppEventContext = {0x1a2b3c4d, 0x5e6f, 0x7a8b, {0x9c, 0x0d, 0x1e, 0x2f, 0x3a, 0x4b, 0x5c, 0x6d}};
-
-class VolumeChangeCallback : public RuntimeClass<RuntimeClassFlags<ClassicCom>, IAudioEndpointVolumeCallback>
+class VolumeCallback : public winrt::implements<VolumeCallback, IAudioEndpointVolumeCallback>
 {
 public:
-    VolumeChangeCallback(ComPtr<IAudioEndpointVolume> endpointVolume)
-        : m_endpointVolume(endpointVolume), m_isSettingVolume(false)
-    {
-    }
+    VolumeCallback(IAudioEndpointVolume *pVol) : m_pVol(pVol) {}
 
     STDMETHODIMP OnNotify(PAUDIO_VOLUME_NOTIFICATION_DATA pNotify) override
     {
-        if (pNotify && IsEqualGUID(pNotify->guidEventContext, GUID_AppEventContext))
-        {
+        if (!pNotify)
             return S_OK;
-        }
-
-        if (pNotify && pNotify->fMasterVolume == TARGET_VOLUME_LEVEL)
-        {
+        if (pNotify->guidEventContext == VOLUME_CTX_GUID)
             return S_OK;
-        }
-
-        bool expected = false;
-        if (!m_isSettingVolume.compare_exchange_strong(expected, true))
-        {
+        if (pNotify->fMasterVolume == TARGET_VOLUME)
             return S_OK;
-        }
 
-        m_endpointVolume->SetMasterVolumeLevelScalar(TARGET_VOLUME_LEVEL, &GUID_AppEventContext);
-        m_isSettingVolume = false;
-
+        m_pVol->SetMasterVolumeLevelScalar(TARGET_VOLUME, &VOLUME_CTX_GUID);
         return S_OK;
     }
 
 private:
-    ComPtr<IAudioEndpointVolume> m_endpointVolume;
-    std::atomic<bool> m_isSettingVolume;
+    IAudioEndpointVolume *m_pVol;
 };
 
-class VolumeCallbackUnregister
+int WINAPI WinMain(
+    _In_ HINSTANCE,
+    _In_opt_ HINSTANCE,
+    _In_ LPSTR,
+    _In_ int)
 {
-public:
-    VolumeCallbackUnregister(ComPtr<IAudioEndpointVolume> volume, IAudioEndpointVolumeCallback *callback)
-        : m_volume(volume), m_callback(callback)
+    init_apartment(apartment_type::multi_threaded);
+
+    auto pEndpointVol = []
     {
+        winrt::com_ptr<IAudioEndpointVolume> endpoint;
+        winrt::com_ptr<IMMDeviceEnumerator> enumerator{winrt::create_instance<IMMDeviceEnumerator>(__uuidof(MMDeviceEnumerator))};
+        winrt::com_ptr<IMMDevice> device;
+
+        enumerator->GetDefaultAudioEndpoint(eRender, eConsole, device.put());
+        device->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_ALL, nullptr, endpoint.put_void());
+        return endpoint;
+    }();
+
+    pEndpointVol->SetMasterVolumeLevelScalar(TARGET_VOLUME, &VOLUME_CTX_GUID);
+    auto callback = winrt::make_self<VolumeCallback>(pEndpointVol.get());
+    pEndpointVol->RegisterControlChangeNotify(callback.get());
+
+    MSG msg;
+    while (GetMessageW(&msg, nullptr, 0, 0))
+    {
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
     }
 
-    ~VolumeCallbackUnregister()
-    {
-        if (m_volume && m_callback)
-        {
-            m_volume->UnregisterControlChangeNotify(m_callback);
-        }
-    }
-
-    VolumeCallbackUnregister(const VolumeCallbackUnregister &) = delete;
-    VolumeCallbackUnregister &operator=(const VolumeCallbackUnregister &) = delete;
-
-private:
-    ComPtr<IAudioEndpointVolume> m_volume;
-    IAudioEndpointVolumeCallback *m_callback;
-};
-
-class COMInitializer
-{
-public:
-    COMInitializer() : m_initialized(SUCCEEDED(CoInitialize(nullptr))) {}
-    ~COMInitializer()
-    {
-        if (m_initialized)
-        {
-            CoUninitialize();
-        }
-    }
-    explicit operator bool() const { return m_initialized; }
-
-private:
-    bool m_initialized;
-};
-
-int main()
-{
-    COMInitializer comInit;
-    if (!comInit)
-        return 1;
-
-    ComPtr<IMMDeviceEnumerator> pEnumerator;
-    HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&pEnumerator));
-    if (FAILED(hr))
-        return 1;
-
-    ComPtr<IMMDevice> pDevice;
-    hr = pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice);
-    if (FAILED(hr))
-        return 1;
-
-    ComPtr<IAudioEndpointVolume> pEndpointVolume;
-    hr = pDevice->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_ALL, nullptr, &pEndpointVolume);
-    if (FAILED(hr))
-        return 1;
-
-    pEndpointVolume->SetMasterVolumeLevelScalar(TARGET_VOLUME_LEVEL, &GUID_AppEventContext);
-
-    auto callback = Make<VolumeChangeCallback>(pEndpointVolume);
-    if (!callback)
-        return 1;
-
-    hr = pEndpointVolume->RegisterControlChangeNotify(callback.Get());
-    if (FAILED(hr))
-        return 1;
-
-    VolumeCallbackUnregister unregisterGuard(pEndpointVolume, callback.Get());
-
-    std::cout << "Volume is locked..." << std::endl;
-    std::cin.get();
-
+    pEndpointVol->UnregisterControlChangeNotify(callback.get());
     return 0;
 }

@@ -13,3 +13,8 @@
 本欲入注册表锁音定级，遍寻良方未果。
 
 遂铸此小器，以镇喧哗。
+
+## 注：
+
+1. 本程序没有窗口，只在后台运行，可以在任务管理器中找到它
+2. 如果想让它开机自启，也许可以考虑把 exe 放到 %APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup

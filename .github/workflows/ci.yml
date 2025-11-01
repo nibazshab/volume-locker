@@ -1,7 +1,9 @@
 name: build
 
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
@@ -16,6 +18,9 @@ jobs:
       - run: cmake -B build
       - run: cmake --build build --config Release
 
-      - uses: actions/upload-artifact@v4
+      - uses: softprops/action-gh-release@v2
+        if: ${{ github.event_name != 'workflow_dispatch' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          path: build/Release/volume-locker.exe
+          files: build/Release/volume-locker.exe

@@ -11,7 +11,7 @@ constexpr float EPSILON = 0.001f;
 
 const GUID VOLUME_CTX_GUID = { 0x1a2b3c4d, 0x5e6f, 0x7a8b,{ 0x9c,0x0d,0x1e,0x2f,0x3a,0x4b,0x5c,0x6d } };
 
-class VolumeCallback final : public winrt::implements<VolumeCallback, IAudioEndpointVolumeCallback>
+class VolumeCallback : public winrt::implements<VolumeCallback, IAudioEndpointVolumeCallback>
 {
 public:
     VolumeCallback(winrt::com_ptr<IAudioEndpointVolume> pVol) : m_pVol(pVol) {}

@@ -16,5 +16,7 @@
 
 ## 注：
 
+后台进程占用仅 0.2M
+
 1. 本程序没有窗口，只在后台运行，可以在任务管理器中找到它
 2. 如果想让它开机自启，也许可以考虑把 exe 放到 %APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup

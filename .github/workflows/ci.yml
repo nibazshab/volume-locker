@@ -14,13 +14,16 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - run: cmake -B build
-      - run: cmake --build build --config Release
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - run: cargo build --release
 
       - uses: softprops/action-gh-release@v2
         if: ${{ github.event_name != 'workflow_dispatch' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: build/Release/volume-locker.exe
+          files: target/release/volume-locker.exe

@@ -1,0 +1,11 @@
+[target.'cfg(windows)']
+rustflags = [
+    "-C", "link-arg=/MERGE:.rdata=.text",
+    "-C", "link-arg=/MERGE:.pdata=.text",
+    "-C", "link-arg=/FIXED",
+    "-C", "link-arg=/ALIGN:16",
+    "-C", "panic=abort",
+    "-C", "link-arg=/INCREMENTAL:NO",
+    "-C", "link-arg=/SUBSYSTEM:WINDOWS",
+    "-C", "link-arg=/ENTRY:mainCRTStartup",
+]

@@ -11,19 +11,40 @@ constexpr GUID UID = {
 };
 
 namespace {
+    template<typename F>
+    class ScopeExit {
+    public:
+        explicit ScopeExit(F &&f) : m_func(std::move(f)) {
+        }
+
+        ~ScopeExit() { m_func(); }
+
+        ScopeExit(const ScopeExit &) = delete;
+
+        ScopeExit &operator=(const ScopeExit &) = delete;
+
+    private:
+        F m_func;
+    };
+
+    template<typename F>
+    auto scope_exit(F &&f) {
+        return ScopeExit<std::decay_t<F> >(std::forward<F>(f));
+    }
+
     class VolumeCallback : public winrt::implements<VolumeCallback, IAudioEndpointVolumeCallback> {
     public:
         explicit VolumeCallback(winrt::com_ptr<IAudioEndpointVolume> pVol) : m_vol(std::move(pVol)) {
         }
 
-        STDMETHODIMP OnNotify(PAUDIO_VOLUME_NOTIFICATION_DATA pNotify) override {
-            if (!pNotify)
+        STDMETHODIMP OnNotify(PAUDIO_VOLUME_NOTIFICATION_DATA p) override {
+            if (!p)
                 return S_OK;
 
-            if (pNotify->guidEventContext == UID)
+            if (p->guidEventContext == UID)
                 return S_OK;
 
-            if (std::fabs(pNotify->fMasterVolume - VOL) < 0.001f)
+            if (std::fabs(p->fMasterVolume - VOL) < 0.001f)
                 return S_OK;
 
             return m_vol->SetMasterVolumeLevelScalar(VOL, &UID);
@@ -35,49 +56,39 @@ namespace {
 }
 
 int WINAPI WinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ LPSTR, _In_ int) {
-    HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"Global\\AudioVolumeLockMutex");
-    if (!hMutex || GetLastError() == ERROR_ALREADY_EXISTS) {
-        if (hMutex) CloseHandle(hMutex);
+    auto hm = CreateMutexW(nullptr, TRUE, L"Global\\AudioVolumeLockMutex");
+    if (!hm || GetLastError() == ERROR_ALREADY_EXISTS) {
+        if (hm) CloseHandle(hm);
         return 0;
     }
 
-    winrt::init_apartment(winrt::apartment_type::multi_threaded);
+    try {
+        winrt::init_apartment(winrt::apartment_type::multi_threaded);
 
-    winrt::com_ptr<IMMDeviceEnumerator> enumerator;
-    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(enumerator.put())))) {
-        CloseHandle(hMutex);
+        winrt::com_ptr<IMMDeviceEnumerator> enumerator;
+        winrt::check_hresult(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                              IID_PPV_ARGS(enumerator.put())));
+
+        winrt::com_ptr<IMMDevice> device;
+        winrt::check_hresult(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, device.put()));
+
+        winrt::com_ptr<IAudioEndpointVolume> pEndpointVol;
+        winrt::check_hresult(device->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_ALL, nullptr,
+                                              pEndpointVol.put_void()));
+
+        winrt::check_hresult(pEndpointVol->SetMasterVolumeLevelScalar(VOL, &UID));
+
+        const auto callback = winrt::make_self<VolumeCallback>(pEndpointVol);
+        winrt::check_hresult(pEndpointVol->RegisterControlChangeNotify(callback.get()));
+
+        auto unregister_guard = scope_exit([&] {
+            winrt::check_hresult(pEndpointVol->UnregisterControlChangeNotify(callback.get()));
+        });
+
+        Sleep(INFINITE);
+    } catch (winrt::hresult_error const &) {
         return 1;
     }
 
-    winrt::com_ptr<IMMDevice> device;
-    if (FAILED(enumerator->GetDefaultAudioEndpoint(eRender, eConsole, device.put()))) {
-        CloseHandle(hMutex);
-        return 2;
-    }
-
-    winrt::com_ptr<IAudioEndpointVolume> pEndpointVol;
-    if (FAILED(device->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_ALL, nullptr, pEndpointVol.put_void()))) {
-        CloseHandle(hMutex);
-        return 3;
-    }
-
-    if (FAILED(pEndpointVol->SetMasterVolumeLevelScalar(VOL, &UID))) {
-        CloseHandle(hMutex);
-        return 4;
-    }
-
-    const auto callback = winrt::make_self<VolumeCallback>(pEndpointVol);
-    if (FAILED(pEndpointVol->RegisterControlChangeNotify(callback.get()))) {
-        CloseHandle(hMutex);
-        return 5;
-    }
-
-    Sleep(INFINITE);
-    if (FAILED(pEndpointVol->UnregisterControlChangeNotify(callback.get()))) {
-        CloseHandle(hMutex);
-        return 6;
-    }
-
-    CloseHandle(hMutex);
     return 0;
 }

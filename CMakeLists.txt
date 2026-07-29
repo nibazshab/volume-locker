@@ -8,22 +8,29 @@ add_executable(volume-locker WIN32 main.cpp)
 
 if (MSVC)
     target_compile_options(volume-locker PRIVATE
+            $<$<CONFIG:Release,MinSizeRel>:
             /O1
             /GL
             /Gy
             /GS-
             /MT
-            /EHsc
             /permissive-
             /W4
+            >
+            $<$<CONFIG:Debug>:
+            /W4
+            /permissive-
+            >
     )
 
     target_link_options(volume-locker PRIVATE
+            $<$<CONFIG:Release,MinSizeRel>:
             /LTCG
             /OPT:REF
             /OPT:ICF
             /INCREMENTAL:NO
             /SUBSYSTEM:WINDOWS
+            >
     )
 endif ()
 

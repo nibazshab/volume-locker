@@ -11,7 +11,6 @@
 
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "ole32.lib")
-#pragma comment(lib, "user32.lib")
 
 using namespace Microsoft::WRL;
 
@@ -27,16 +26,14 @@ constexpr auto REG_V = L"Volume";
 
 static float LoadVolume() {
     HKEY k;
-    DWORD v = 100, n = sizeof(v), t = 0;
+    DWORD v = 100, n = sizeof(v);
 
-    if (RegCreateKeyExW(HKEY_CURRENT_USER, REG_K, 0, nullptr, 0,KEY_READ | KEY_WRITE, nullptr, &k, nullptr)
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, REG_K, 0, nullptr, 0, KEY_READ | KEY_WRITE, nullptr, &k, nullptr)
         == ERROR_SUCCESS) {
-        
-        if (RegQueryValueExW(k, REG_V, nullptr, &t, reinterpret_cast<BYTE *>(&v), &n)
-            != ERROR_SUCCESS
-            || t != REG_DWORD) {
-            
-            RegSetValueExW(k, REG_V, 0, REG_DWORD, reinterpret_cast<BYTE *>(&v), sizeof(v));
+
+        if (RegGetValueW(k, nullptr, REG_V, RRF_RT_REG_DWORD, nullptr, &v, &n)!= ERROR_SUCCESS) {
+            v = 100;
+            RegSetValueExW(k, REG_V, 0, REG_DWORD, reinterpret_cast<const BYTE *>(&v), sizeof(v));
         }
 
         RegCloseKey(k);
@@ -51,15 +48,14 @@ namespace {
         float target;
 
     public:
-        Callback(ComPtr<IAudioEndpointVolume> v, const float t) : volume(std::move(v)), target(t) {
-        }
+        Callback(ComPtr<IAudioEndpointVolume> v, const float t) : volume(std::move(v)), target(t) {}
 
         STDMETHODIMP OnNotify(
             PAUDIO_VOLUME_NOTIFICATION_DATA d) noexcept override {
             if (d && d->guidEventContext != LOCK
                 && std::fabs(d->fMasterVolume - target) > 0.001f) {
-                
-                volume->SetMasterVolumeLevelScalar(target, &LOCK);
+
+                (void)volume->SetMasterVolumeLevelScalar(target, &LOCK);
             }
 
             return S_OK;
@@ -68,7 +64,7 @@ namespace {
 }
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
-    HANDLE mutex = CreateMutexW(nullptr, TRUE, L"Global\\AudioVolumeLockMutex");
+    HANDLE mutex = CreateMutexW(nullptr, TRUE, L"Local\\AudioVolumeLockMutex");
 
     if (!mutex || GetLastError() == ERROR_ALREADY_EXISTS) {
         if (mutex) {
@@ -99,11 +95,11 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
 
         if (SUCCEEDED(hr)) {
             const float target = LoadVolume();
-            volume->SetMasterVolumeLevelScalar(target, &LOCK);
+            (void)volume->SetMasterVolumeLevelScalar(target, &LOCK);
 
             if (const auto cb = Make<Callback>(volume, target);
                 cb && SUCCEEDED(volume->RegisterControlChangeNotify(cb.Get()))) {
-                
+
                 Sleep(INFINITE);
             }
         }

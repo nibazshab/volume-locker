@@ -22,8 +22,8 @@ constexpr GUID LOCK = {
     .Data4 = {0xbf, 0x2b, 0xc4, 0x9a, 0x4f, 0xaa, 0xe4, 0xda}
 };
 
-static auto REG_K = L"Software\\AudioVolumeLocker";
-static auto REG_V = L"Volume";
+constexpr auto REG_K = L"Software\\AudioVolumeLocker";
+constexpr auto REG_V = L"Volume";
 
 static float LoadVolume() {
     HKEY k;

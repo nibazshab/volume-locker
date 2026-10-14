@@ -18,7 +18,7 @@
 
 后台进程占用仅 0.3M
 
-可编辑注册表 `HKEY_CURRENT_USER\Software\AudioVolumeLocker\Volume` 的 10 进制值来设置音量，默认为 0
+可编辑注册表 `HKEY_CURRENT_USER\Software\volume-locker\Volume` 的 10 进制值来设置音量，默认为 0
 
 1. 本程序没有窗口，只在后台运行，可以在任务管理器中找到 `volume-locker.exe`
 2. 如果想让它开机自启，也许可以考虑把 exe 放到 `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`

@@ -26,13 +26,13 @@ constexpr auto REG_V = L"Volume";
 
 static float LoadVolume() {
     HKEY k;
-    DWORD v = 100, n = sizeof(v);
+    DWORD v = 0, n = sizeof(v);
 
     if (RegCreateKeyExW(HKEY_CURRENT_USER, REG_K, 0, nullptr, 0, KEY_READ | KEY_WRITE, nullptr, &k, nullptr)
         == ERROR_SUCCESS) {
 
         if (RegGetValueW(k, nullptr, REG_V, RRF_RT_REG_DWORD, nullptr, &v, &n) != ERROR_SUCCESS) {
-            v = 100;
+            v = 0;
             RegSetValueExW(k, REG_V, 0, REG_DWORD, reinterpret_cast<const BYTE *>(&v), sizeof(v));
         }
 

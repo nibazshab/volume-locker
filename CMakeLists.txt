@@ -16,3 +16,8 @@ target_compile_options(volume-locker PRIVATE
 target_link_options(volume-locker PRIVATE
         $<$<CONFIG:Release,MinSizeRel>:/LTCG /OPT:REF /OPT:ICF /INCREMENTAL:NO>
 )
+
+target_link_libraries(volume-locker PRIVATE
+        advapi32
+        ole32
+)

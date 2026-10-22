@@ -21,6 +21,8 @@ constexpr GUID LOCK = {
     .Data4 = {0xbf, 0x2b, 0xc4, 0x9a, 0x4f, 0xaa, 0xe4, 0xda}
 };
 
+constexpr auto MUT = L"Local\\volume-locker";
+
 constexpr auto REG_K = L"Software\\volume-locker";
 constexpr auto REG_V = L"Volume";
 
@@ -64,7 +66,7 @@ namespace {
 }
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
-    HANDLE mutex = CreateMutexW(nullptr, TRUE, L"Local\\AudioVolumeLockMutex");
+    HANDLE mutex = CreateMutexW(nullptr, TRUE, MUT);
 
     if (!mutex || GetLastError() == ERROR_ALREADY_EXISTS) {
         if (mutex) {

@@ -62,7 +62,7 @@ namespace {
     };
 }
 
-int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
+int WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     HANDLE mutex = CreateMutexW(nullptr, TRUE, MUT);
 
     if (!mutex || GetLastError() == ERROR_ALREADY_EXISTS) {

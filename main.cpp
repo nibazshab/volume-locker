@@ -9,9 +9,6 @@
 #include <algorithm>
 #include <cmath>
 
-#pragma comment(lib, "advapi32.lib")
-#pragma comment(lib, "ole32.lib")
-
 using namespace Microsoft::WRL;
 
 constexpr GUID LOCK = {
